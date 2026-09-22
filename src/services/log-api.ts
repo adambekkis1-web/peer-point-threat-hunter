@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { queryFallbackLogs } from "./fallback.js";
+import { FALLBACK_LOG_ROWS, queryFallbackLogs } from "./fallback.js";
 
 export const CENTRAL_LOG_API_URL = "https://peer-point-log-api.peer-point-user-group.workers.dev";
 export const LOG_API_TIMEOUT_MS = 8_000;
@@ -134,6 +134,14 @@ const remoteErrorResponseSchema = z.object({
   }),
 });
 
+const remoteAggregateResponseSchema = z.object({
+  ok: z.literal(true),
+  field: aggregateFieldSchema,
+  buckets: z.array(aggregateBucketSchema).max(200),
+  partitionsScanned: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+
 function invalidInput<T>(): LogApiResult<T> {
   return { ok: false, error: { code: "INVALID_INPUT", message: "Log query input is invalid" } };
 }
@@ -145,11 +153,32 @@ function malformedResponse<T>(): LogApiResult<T> {
   };
 }
 
-function notImplemented<T>(task: string): LogApiResult<T> {
-  return {
-    ok: false,
-    error: { code: "NOT_IMPLEMENTED", message: `Complete the ${task} workshop task` },
-  };
+function compareLogEntries(left: LogEntry, right: LogEntry): number {
+  return (
+    Date.parse(left.timestamp) - Date.parse(right.timestamp) ||
+    left.requestId.localeCompare(right.requestId)
+  );
+}
+
+function aggregateFallbackLogs(input: AggregateLogsInput): AggregateLogsResult {
+  const counts = new Map<string, number>();
+  for (const row of FALLBACK_LOG_ROWS) {
+    const timestamp = Date.parse(row.timestamp);
+    if (timestamp < Date.parse(input.from) || timestamp > Date.parse(input.to)) continue;
+    const value = String(row[input.field]);
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  const all = [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
+  const buckets = all.slice(0, input.limit);
+  return aggregateLogsResultSchema.parse({
+    field: input.field,
+    buckets,
+    partitionsScanned: 0,
+    truncated: all.length > buckets.length,
+    source: "fallback",
+  });
 }
 
 function rejectedResponse<T>(status: number, body: unknown): LogApiResult<T> {
@@ -265,38 +294,96 @@ export async function queryLogs(
   };
 }
 
-// WORKSHOP TASK: Validate the input, call the bounded aggregate endpoint, and parse its response.
-export function aggregateLogs(
+export async function aggregateLogs(
   untrustedInput: unknown,
   options: LogApiOptions = {},
 ): Promise<LogApiResult<AggregateLogsResult>> {
-  void options;
-  const result = aggregateLogsInputSchema.safeParse(untrustedInput).success
-    ? notImplemented<AggregateLogsResult>("aggregateLogs")
-    : invalidInput<AggregateLogsResult>();
-  return Promise.resolve(result);
+  const parsedInput = aggregateLogsInputSchema.safeParse(untrustedInput);
+  if (!parsedInput.success) return invalidInput();
+  const input = parsedInput.data;
+  const url = createUrl(
+    "aggregate",
+    { from: input.from, to: input.to, field: input.field, limit: input.limit },
+    options.baseUrl ?? CENTRAL_LOG_API_URL,
+  );
+  const remote = await fetchJson(url, options);
+  if (!remote.available) return { ok: true, data: aggregateFallbackLogs(input) };
+  if (!remote.response.ok) return rejectedResponse(remote.response.status, remote.body);
+
+  const parsedResponse = remoteAggregateResponseSchema.safeParse(remote.body);
+  if (!parsedResponse.success || parsedResponse.data.field !== input.field) {
+    return malformedResponse();
+  }
+  const buckets = parsedResponse.data.buckets.slice(0, input.limit);
+  return {
+    ok: true,
+    data: aggregateLogsResultSchema.parse({
+      field: input.field,
+      buckets,
+      partitionsScanned: parsedResponse.data.partitionsScanned,
+      truncated:
+        parsedResponse.data.truncated || parsedResponse.data.buckets.length > buckets.length,
+      source: "remote",
+    }),
+  };
 }
 
-// WORKSHOP TASK: Reuse queryLogs to build a bounded profile from exact rows.
-export function profileIp(
+export async function profileIp(
   untrustedInput: unknown,
   options: LogApiOptions = {},
 ): Promise<LogApiResult<ProfileIpResult>> {
-  void options;
-  const result = profileIpInputSchema.safeParse(untrustedInput).success
-    ? notImplemented<ProfileIpResult>("profileIp")
-    : invalidInput<ProfileIpResult>();
-  return Promise.resolve(result);
+  const parsedInput = profileIpInputSchema.safeParse(untrustedInput);
+  if (!parsedInput.success) return invalidInput();
+  const input = parsedInput.data;
+  const query = await queryLogs(input, options);
+  if (!query.ok) return query;
+  const evidence = query.data.evidence;
+  const timestamps = evidence.map((row) => row.timestamp).sort();
+  const eventCounts = new Map<string, number>();
+  for (const row of evidence) {
+    eventCounts.set(row.event, (eventCounts.get(row.event) ?? 0) + 1);
+  }
+  const events = [...eventCounts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
+  const asns = [...new Set(evidence.map((row) => row.asn))].sort((left, right) => left - right);
+  const userAgents = [...new Set(evidence.map((row) => row.userAgent))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  return {
+    ok: true,
+    data: profileIpResultSchema.parse({
+      ip: input.ip,
+      rowCount: evidence.length,
+      firstSeen: timestamps.at(0) ?? null,
+      lastSeen: timestamps.at(-1) ?? null,
+      asns,
+      userAgents,
+      events,
+      evidence,
+      partitionsScanned: query.data.partitionsScanned,
+      truncated: query.data.truncated,
+      source: query.data.source,
+    }),
+  };
 }
 
-// WORKSHOP TASK: Reuse queryLogs and order exact rows deterministically without dropping truncation.
-export function buildTimeline(
+export async function buildTimeline(
   untrustedInput: unknown,
   options: LogApiOptions = {},
 ): Promise<LogApiResult<BuildTimelineResult>> {
-  void options;
-  const result = buildTimelineInputSchema.safeParse(untrustedInput).success
-    ? notImplemented<BuildTimelineResult>("buildTimeline")
-    : invalidInput<BuildTimelineResult>();
-  return Promise.resolve(result);
+  const parsedInput = buildTimelineInputSchema.safeParse(untrustedInput);
+  if (!parsedInput.success) return invalidInput();
+  const query = await queryLogs(parsedInput.data, options);
+  if (!query.ok) return query;
+  const events = [...query.data.evidence].sort(compareLogEntries);
+  return {
+    ok: true,
+    data: buildTimelineResultSchema.parse({
+      events,
+      partitionsScanned: query.data.partitionsScanned,
+      truncated: query.data.truncated,
+      source: query.data.source,
+    }),
+  };
 }
