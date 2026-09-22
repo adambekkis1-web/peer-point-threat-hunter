@@ -11,6 +11,7 @@ import {
   queryLogsInputSchema,
   type AggregateLogsResult,
   type BuildTimelineResult,
+  type LogApiError,
   type LogApiOptions,
   type LogApiResult,
   type ProfileIpResult,
@@ -27,7 +28,7 @@ type MaybePromise<T> = T | Promise<T>;
 
 type RecordFindingResult =
   | { ok: true; finding: FindingInput }
-  | { ok: false; error: { code: "NOT_IMPLEMENTED"; message: string } };
+  | { ok: false; error: LogApiError };
 
 interface ThreatHunterServices {
   queryLogs: typeof queryLogs;
@@ -133,16 +134,32 @@ export function createThreatHunterTools(dependencies: ThreatHunterToolDependenci
       description:
         "Persist an evidence-grounded finding. Every evidence item must be an exact row returned by a prior log tool.",
       inputSchema: findingInputSchema,
-      // WORKSHOP TASK: Verify that every row was observed, persist the finding, and return success.
-      execute: (input): Promise<RecordFindingResult> => {
-        void input;
-        return Promise.resolve({
-          ok: false,
-          error: {
-            code: "NOT_IMPLEMENTED",
-            message: "Complete the grounded finding task in src/agent/tools/index.ts",
-          },
-        });
+      execute: async (input): Promise<RecordFindingResult> => {
+        const finding = findingInputSchema.safeParse(input);
+        if (!finding.success) {
+          return {
+            ok: false,
+            error: {
+              code: "INVALID_INPUT",
+              message: "Finding input is invalid: grounded evidence fields failed validation",
+            },
+          };
+        }
+        try {
+          await dependencies.recordFinding(finding.data);
+        } catch (error) {
+          if (error instanceof Error && error.message === "FINDING_EVIDENCE_NOT_OBSERVED") {
+            return {
+              ok: false,
+              error: {
+                code: "INVALID_INPUT",
+                message: "Finding rejected: every evidence row must come from an observed query",
+              },
+            };
+          }
+          throw error;
+        }
+        return { ok: true, finding: finding.data };
       },
     }),
   };

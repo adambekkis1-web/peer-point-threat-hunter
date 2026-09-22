@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { FindingInput } from "../src/agent/state.js";
 import { createThreatHunterTools } from "../src/agent/tools/index.js";
 import {
   aggregateLogs,
@@ -110,12 +111,18 @@ describe("threat hunter starter", () => {
     }
   });
 
-  it("records queryLogs evidence and keeps finding results typed", async () => {
+  it("records queryLogs evidence and persists only observed findings", async () => {
+    const observedRequestIds = new Set<string>();
     const recordedQueries: unknown[] = [];
-    const recordFinding = vi.fn();
+    const recordFinding = vi.fn((candidate: FindingInput) => {
+      if (candidate.evidence.some((entry) => !observedRequestIds.has(entry.requestId))) {
+        throw new Error("FINDING_EVIDENCE_NOT_OBSERVED");
+      }
+    });
     const tools = createThreatHunterTools({
       recordQuery: (query) => {
         recordedQueries.push(query);
+        for (const entry of query.evidence) observedRequestIds.add(entry.requestId);
       },
       recordFinding,
       setTimeline: vi.fn(),
@@ -146,8 +153,17 @@ describe("threat hunter starter", () => {
       confidence: 0.5,
       evidence: [sampleRow],
     };
-    const findingResult = await tools.recordFinding.execute?.(finding, executionOptions);
-    expect(findingResult).toMatchObject({ error: { code: "NOT_IMPLEMENTED" } });
-    expect(recordFinding).not.toHaveBeenCalled();
+    const accepted = await tools.recordFinding.execute?.(finding, executionOptions);
+    expect(accepted).toEqual({ ok: true, finding });
+    expect(recordFinding).toHaveBeenCalledWith(finding);
+
+    const unobservedFinding = {
+      ...finding,
+      title: "Unobserved example",
+      evidence: [{ ...sampleRow, requestId: "starter-test-row-9999" }],
+    };
+    const rejected = await tools.recordFinding.execute?.(unobservedFinding, executionOptions);
+    expect(rejected).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+    expect(recordFinding).toHaveBeenCalledTimes(2);
   });
 });
