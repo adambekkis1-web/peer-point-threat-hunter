@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { FindingInput } from "../src/agent/state.js";
+import type { AssessmentInput, FindingInput } from "../src/agent/state.js";
 import { createThreatHunterTools } from "../src/agent/tools/index.js";
 import {
   aggregateLogs,
@@ -125,6 +125,7 @@ describe("threat hunter starter", () => {
         for (const entry of query.evidence) observedRequestIds.add(entry.requestId);
       },
       recordFinding,
+      recordAssessment: vi.fn(),
       setTimeline: vi.fn(),
       services: {
         queryLogs: vi.fn<typeof queryLogs>().mockResolvedValue({
@@ -165,5 +166,89 @@ describe("threat hunter starter", () => {
     const rejected = await tools.recordFinding.execute?.(unobservedFinding, executionOptions);
     expect(rejected).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
     expect(recordFinding).toHaveBeenCalledTimes(2);
+  });
+
+  it("records analyst assessment tactics only from observed evidence", async () => {
+    const observedRequestIds = new Set<string>();
+    const recordAssessment = vi.fn((candidate: AssessmentInput) => {
+      const evidence = candidate.tactics.flatMap((technique) => technique.evidence);
+      if (evidence.some((entry) => !observedRequestIds.has(entry.requestId))) {
+        throw new Error("ASSESSMENT_EVIDENCE_NOT_OBSERVED");
+      }
+    });
+    const tools = createThreatHunterTools({
+      recordQuery: (query) => {
+        for (const entry of query.evidence) observedRequestIds.add(entry.requestId);
+      },
+      recordFinding: vi.fn(),
+      recordAssessment,
+      setTimeline: vi.fn(),
+      services: {
+        queryLogs: vi.fn<typeof queryLogs>().mockResolvedValue({
+          ok: true,
+          data: {
+            evidence: [sampleRow],
+            partitionsScanned: 1,
+            truncated: false,
+            source: "remote",
+          },
+        }),
+      },
+    });
+
+    await expect(tools.queryLogs.execute?.(input, executionOptions)).resolves.toMatchObject({
+      ok: true,
+    });
+
+    const assessment = {
+      summary: "Credential access followed by session reuse and data access.",
+      tactics: [
+        {
+          techniqueId: "T1110",
+          name: "Brute Force",
+          tactic: "Credential Access",
+          evidence: [sampleRow],
+        },
+      ],
+      actorGroups: [
+        {
+          label: "Credential-focused cluster",
+          summary: "A profile consistent with repeated failed logins.",
+          techniques: ["T1110"],
+          confidence: 0.3,
+        },
+      ],
+      prediction: {
+        summary: "The actor is likely to reuse valid credentials on more accounts.",
+        steps: [
+          {
+            step: "Account expansion",
+            rationale: "Observed credential access precedes wider account use.",
+            likelihood: "medium",
+            indicators: ["Repeated login-success on new accounts"],
+          },
+        ],
+        horizon: "Next 24 hours",
+        caveats: "Hypothesis only; monitor the corpus for confirmation.",
+      },
+    };
+    const accepted = await tools.recordAssessment.execute?.(assessment, executionOptions);
+    expect(accepted).toEqual({ ok: true, assessment });
+    expect(recordAssessment).toHaveBeenCalledWith(assessment);
+
+    const unobservedAssessment = {
+      ...assessment,
+      tactics: [
+        {
+          techniqueId: "T1110",
+          name: "Brute Force",
+          tactic: "Credential Access",
+          evidence: [{ ...sampleRow, requestId: "starter-test-row-9999" }],
+        },
+      ],
+    };
+    const rejected = await tools.recordAssessment.execute?.(unobservedAssessment, executionOptions);
+    expect(rejected).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+    expect(recordAssessment).toHaveBeenCalledTimes(2);
   });
 });

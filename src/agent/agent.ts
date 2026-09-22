@@ -18,11 +18,14 @@ import { createThreatHunterModel } from "./model.js";
 import {
   appendFinding,
   appendQuery,
+  assertAssessmentEvidenceObserved,
   assertFindingEvidenceObserved,
   createInitialState,
+  replaceAssessment,
   setInvestigationStatus,
   setTimeline,
   threatHunterStateSchema,
+  type AssessmentInput,
   type FindingInput,
   type QueryRecordInput,
   type ThreatHunterState,
@@ -37,6 +40,7 @@ const ACTIVE_TOOLS = [
   "profileIp",
   "buildTimeline",
   "recordFinding",
+  "recordAssessment",
   "set_context",
 ];
 
@@ -62,6 +66,7 @@ export class ThreatHunterAgent extends Think<Env, ThreatHunterState> {
       logApiOptions: { baseUrl: this.env.LOG_API_URL },
       recordQuery: (query) => this.recordQuery(query),
       recordFinding: (finding) => this.recordGroundedFinding(finding),
+      recordAssessment: (assessment) => this.recordGroundedAssessment(assessment),
       setTimeline: (events) => this.persistTimeline(events),
     });
   }
@@ -183,6 +188,12 @@ export class ThreatHunterAgent extends Think<Env, ThreatHunterState> {
 
   private recordGroundedFinding(finding: FindingInput): void {
     this.setState(appendFinding(this.state, assertFindingEvidenceObserved(this.state, finding)));
+  }
+
+  private recordGroundedAssessment(assessment: AssessmentInput): void {
+    this.setState(
+      replaceAssessment(this.state, assertAssessmentEvidenceObserved(this.state, assessment)),
+    );
   }
 
   private persistTimeline(events: readonly TimelineEvent[]): void {

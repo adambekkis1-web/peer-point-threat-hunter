@@ -5,6 +5,7 @@ import {
   type ThreatHunterState,
   type TimelineEvent,
 } from "../../agent/state.js";
+import { ActorGroupsPanel, MitreTacticsPanel, PredictionPanel } from "./threat-assessment.js";
 
 interface ThreatDashboardProps {
   state: ThreatHunterState;
@@ -401,13 +402,21 @@ export function ThreatDashboard({ state }: ThreatDashboardProps) {
   );
   const timeline = asItems<TimelineEvent>(model.timeline);
   const status = textValue(model, ["status"], "idle");
+  const assessment = state.assessment ?? null;
 
   return (
     <div className="threat-dashboard">
       <Overview findings={findings} queries={queries} status={status} />
       <QueryLedger queries={queries} />
       <Findings findings={findings} />
-      <AttackTimeline events={timeline} />
+      <div className="threat-dashboard__split">
+        <AttackTimeline events={timeline} />
+        <aside className="threat-dashboard__analyst" aria-label="Analyst assessment">
+          <MitreTacticsPanel assessment={assessment} />
+          <ActorGroupsPanel assessment={assessment} />
+          <PredictionPanel assessment={assessment} />
+        </aside>
+      </div>
     </div>
   );
 }
