@@ -18,7 +18,9 @@ import {
   type QueryLogsResult,
 } from "../../services/log-api.js";
 import {
+  assessmentInputSchema,
   findingInputSchema,
+  type AssessmentInput,
   type FindingInput,
   type QueryRecordInput,
   type TimelineEvent,
@@ -28,6 +30,10 @@ type MaybePromise<T> = T | Promise<T>;
 
 type RecordFindingResult =
   | { ok: true; finding: FindingInput }
+  | { ok: false; error: LogApiError };
+
+type RecordAssessmentResult =
+  | { ok: true; assessment: AssessmentInput }
   | { ok: false; error: LogApiError };
 
 interface ThreatHunterServices {
@@ -40,6 +46,7 @@ interface ThreatHunterServices {
 export interface ThreatHunterToolDependencies {
   recordQuery: (query: QueryRecordInput) => MaybePromise<void>;
   recordFinding: (finding: FindingInput) => MaybePromise<void>;
+  recordAssessment: (assessment: AssessmentInput) => MaybePromise<void>;
   setTimeline: (events: readonly TimelineEvent[]) => MaybePromise<void>;
   logApiOptions?: LogApiOptions;
   services?: Partial<ThreatHunterServices>;
@@ -160,6 +167,38 @@ export function createThreatHunterTools(dependencies: ThreatHunterToolDependenci
           throw error;
         }
         return { ok: true, finding: finding.data };
+      },
+    }),
+    recordAssessment: tool({
+      description:
+        "Persist the analyst assessment: MITRE ATT&CK techniques with grounded evidence, plausible actor profiles, and a bounded prediction of the actor's next intentions.",
+      inputSchema: assessmentInputSchema,
+      execute: async (input): Promise<RecordAssessmentResult> => {
+        const assessment = assessmentInputSchema.safeParse(input);
+        if (!assessment.success) {
+          return {
+            ok: false,
+            error: {
+              code: "INVALID_INPUT",
+              message: "Assessment input is invalid: grounded evidence fields failed validation",
+            },
+          };
+        }
+        try {
+          await dependencies.recordAssessment(assessment.data);
+        } catch (error) {
+          if (error instanceof Error && error.message === "ASSESSMENT_EVIDENCE_NOT_OBSERVED") {
+            return {
+              ok: false,
+              error: {
+                code: "INVALID_INPUT",
+                message: "Assessment rejected: every evidence row must come from an observed query",
+              },
+            };
+          }
+          throw error;
+        }
+        return { ok: true, assessment: assessment.data };
       },
     }),
   };

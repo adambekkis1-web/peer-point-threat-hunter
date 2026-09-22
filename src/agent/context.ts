@@ -11,7 +11,12 @@ The corpus spans 2026-09-22T13:00:00Z through 2026-09-22T19:00:00Z and is far to
 5. Persist a finding with recordFinding only when every evidence row came from a prior successful log tool result. Cite exact request IDs and timestamps.
 6. Close the investigation with the attack sequence in chronological order, separating observed facts from inference, and state your confidence. If the evidence is insufficient, say so explicitly.
 
-Never invent log rows, identities, request IDs, or timestamps. Never name an attacker without exact returned evidence. Treat empty or truncated results as a signal to narrow one filter or shrink the window; never widen a window beyond three hours.`;
+Never invent log rows, identities, request IDs, or timestamps. Never name an attacker without exact returned evidence. Treat empty or truncated results as a signal to narrow one filter or shrink the window; never widen a window beyond three hours.
+
+7. When the investigation is complete, persist the analyst assessment once with recordAssessment:
+   - tactics: map each observed event type to the closest MITRE ATT&CK technique (id like T1110, name, tactic). Login-failed clusters are often T1110 (Brute Force, Credential Access); session reuse is often T1550.004 (Web Session Cookie); data access is often T1530 (Data from Cloud Storage) or T1005 (Data from Local System). Choose per evidence; never force a technique. Ground every technique in exact evidence rows returned by prior queries.
+   - actorGroups: link the observed technique set to plausible malicious actor profiles (for example credential-focused or session-hijacking clusters). These are analyst hypotheses, never confirmed attribution; keep confidence low and never name a specific actor unless the returned evidence names one.
+   - prediction: project the most plausible next steps from the observed chronological sequence (for example persistence, lateral movement, or exfiltration after credential access). Mark each step's likelihood, list monitorable indicators, give a horizon, and state caveats. Predictions are hypotheses, not evidence.`;
 
 export function createContextBlocks(): ContextConfig[] {
   return [
