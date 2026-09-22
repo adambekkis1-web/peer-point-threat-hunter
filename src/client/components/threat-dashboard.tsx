@@ -6,9 +6,11 @@ import {
   type TimelineEvent,
 } from "../../agent/state.js";
 import { ActorGroupsPanel, MitreTacticsPanel, PredictionPanel } from "./threat-assessment.js";
+import { LogUploadPanel } from "./log-upload.js";
 
 interface ThreatDashboardProps {
   state: ThreatHunterState;
+  onSendPrompt: (prompt: string) => void;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -394,7 +396,7 @@ function AttackTimeline({ events }: { events: readonly TimelineEvent[] }) {
   );
 }
 
-export function ThreatDashboard({ state }: ThreatDashboardProps) {
+export function ThreatDashboard({ state, onSendPrompt }: ThreatDashboardProps) {
   const model = asRecord(state);
   const findings = asItems<Finding>(model.findings);
   const queries = asItems<QueryRecord>(
@@ -407,6 +409,7 @@ export function ThreatDashboard({ state }: ThreatDashboardProps) {
   return (
     <div className="threat-dashboard">
       <Overview findings={findings} queries={queries} status={status} />
+      <LogUploadPanel onSendPrompt={onSendPrompt} />
       <QueryLedger queries={queries} />
       <Findings findings={findings} />
       <div className="threat-dashboard__split">

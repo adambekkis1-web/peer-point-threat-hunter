@@ -49,8 +49,8 @@ export function App() {
   );
   const error = actionError ?? chat.error?.message ?? agent.connectionError?.message;
 
-  function handleSubmit(): void {
-    const text = input.trim();
+  function handleSubmit(prompt?: string): void {
+    const text = (typeof prompt === "string" ? prompt : input).trim();
     if (!text) return;
     setActionError(undefined);
     void chat.sendMessage({ text }).catch(() => setActionError("The message could not be sent."));
@@ -75,7 +75,7 @@ export function App() {
 
   return (
     <WorkshopShell
-      aside={<ThreatDashboard state={dashboard} />}
+      aside={<ThreatDashboard onSendPrompt={handleSubmit} state={dashboard} />}
       description="Investigate a large synthetic HTTP corpus through bounded queries, evidence-backed pivots, persistent findings, and a chronological attack timeline."
       {...(error === undefined ? {} : { error })}
       input={input}
