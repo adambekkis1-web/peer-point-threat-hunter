@@ -1,0 +1,11 @@
+{
+  "card": "card-1-threat-hunter",
+  "title": "Threat Hunter",
+  "intendedEditFiles": [
+    "src/agent/context.ts",
+    "src/agent/tools/index.ts",
+    "src/services/log-api.ts"
+  ],
+  "sharedServices": ["log-api"],
+  "sourceCommit": "development"
+}

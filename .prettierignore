@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.wrangler
+.generated
+.secrets
+package-lock.json
+worker-configuration.d.ts
+starters/**/package.json
+starters/**/starter.json
+package.json
+packages/**/package.json
+starter.json

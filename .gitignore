@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.dev.vars.example
+!.env.example
+*.log
+*.cpuprofile
+.DS_Store
+.vscode/
+.idea/
+**/reports/model-conformance/*.json

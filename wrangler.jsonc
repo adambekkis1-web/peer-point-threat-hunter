@@ -1,0 +1,46 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "peer-point-threat-hunter",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "ai": {
+    "binding": "AI",
+    "remote": true,
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/agents/*", "/api/*"],
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "THREAT_HUNTER_AGENT",
+        "class_name": "ThreatHunterAgent",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ThreatHunterAgent"],
+    },
+  ],
+  "vars": {
+    "AI_GATEWAY_ID": "default",
+    "LOG_API_URL": "https://peer-point-log-api.peer-point-user-group.workers.dev",
+    "CITY": "Montreal",
+    "CARD": "threat-hunter",
+    "ENVIRONMENT": "starter",
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+    },
+  },
+}

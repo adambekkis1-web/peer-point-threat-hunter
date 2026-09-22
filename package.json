@@ -1,0 +1,54 @@
+{
+  "name": "peer-point-threat-hunter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check:startup": "npm run build && wrangler check startup",
+    "deploy": "npm run build && wrangler deploy",
+    "dev": "vite dev",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint .",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "wrangler types --check && tsc -p tsconfig.json --noEmit",
+    "types": "wrangler types",
+    "verify": "npm run format && npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "4.0.14",
+    "@ai-sdk/react": "4.0.102",
+    "@cloudflare/ai-chat": "0.12.0",
+    "@cloudflare/think": "0.18.0",
+    "@peer-point/workshop-config": "file:./packages/workshop-config",
+    "@peer-point/workshop-ui": "file:./packages/workshop-ui",
+    "agents": "0.23.0",
+    "ai": "7.0.99",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "workers-ai-provider": "4.0.0",
+    "zod": "4.6.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.54.8",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "5.9.2",
+    "vite": "8.3.0",
+    "vitest": "4.1.11",
+    "wrangler": "4.131.1",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.6",
+    "typescript-eslint": "8.70.0"
+  },
+  "description": "Investigate deterministic authentication logs and persist grounded security findings.",
+  "engines": { "node": ">=24" },
+  "packageManager": "npm@11.12.1",
+  "cloudflare": {
+    "bindings": { "AI": "Workers AI", "THREAT_HUNTER_AGENT": "Durable Object" }
+  }
+}
