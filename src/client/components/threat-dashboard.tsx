@@ -408,8 +408,8 @@ export function ThreatDashboard({ state, onSendPrompt }: ThreatDashboardProps) {
 
   return (
     <div className="threat-dashboard">
-      <Overview findings={findings} queries={queries} status={status} />
       <LogUploadPanel onSendPrompt={onSendPrompt} />
+      <Overview findings={findings} queries={queries} status={status} />
       <QueryLedger queries={queries} />
       <Findings findings={findings} />
       <div className="threat-dashboard__split">

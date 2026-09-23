@@ -54,10 +54,91 @@ function summarize(
   };
 }
 
-function importRows(
-  text: string,
-  fileName: string,
-): { summary: ImportSummary } | { error: string } {
+type ImportFormat = "json" | "ndjson" | "csv";
+
+const CSV_NUMERIC_FIELDS = new Set(["asn", "status"]);
+const CSV_NULLABLE_FIELDS = new Set(["sessionId"]);
+
+function detectFormat(fileName: string): ImportFormat {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".csv")) return "csv";
+  if (lower.endsWith(".ndjson") || lower.endsWith(".jsonl")) return "ndjson";
+  return "json";
+}
+
+function splitLines(text: string): string[] {
+  return text.split(/\r\n|\n|\r/).filter((line) => line.trim().length > 0);
+}
+
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      values.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  values.push(current);
+  return values;
+}
+
+function parseCsvRows(text: string): unknown[] {
+  const lines = splitLines(text);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0] ?? "").map((header) => header.trim());
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    const row: Record<string, unknown> = {};
+    headers.forEach((header, index) => {
+      const raw = (values[index] ?? "").trim();
+      if (CSV_NULLABLE_FIELDS.has(header) && (raw === "" || raw.toLowerCase() === "null")) {
+        row[header] = null;
+      } else if (CSV_NUMERIC_FIELDS.has(header)) {
+        row[header] = raw === "" ? undefined : Number(raw);
+      } else {
+        row[header] = raw;
+      }
+    });
+    return row;
+  });
+}
+
+function parseNdjsonRows(text: string): { rows: unknown[] } | { error: string } {
+  const rows: unknown[] = [];
+  for (const line of splitLines(text)) {
+    try {
+      rows.push(JSON.parse(line));
+    } catch {
+      return { error: "The file contains a line that is not valid JSON." };
+    }
+  }
+  return { rows };
+}
+
+function parseRows(text: string, format: ImportFormat): { rows: unknown[] } | { error: string } {
+  if (format === "csv") {
+    const rows = parseCsvRows(text);
+    return rows.length === 0 ? { error: "No rows found in the CSV file." } : { rows };
+  }
+  if (format === "ndjson") return parseNdjsonRows(text);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -65,9 +146,18 @@ function importRows(
     return { error: "The file is not valid JSON." };
   }
   if (!Array.isArray(parsed)) return { error: "Expected a JSON array of log rows." };
+  return { rows: parsed };
+}
+
+function importRows(
+  text: string,
+  fileName: string,
+): { summary: ImportSummary } | { error: string } {
+  const outcome = parseRows(text, detectFormat(fileName));
+  if ("error" in outcome) return outcome;
   const rows: LogEntry[] = [];
   let rejectedCount = 0;
-  for (const item of parsed) {
+  for (const item of outcome.rows) {
     if (rows.length >= MAX_UPLOAD_ROWS) {
       rejectedCount += 1;
       continue;
@@ -155,21 +245,24 @@ export function LogUploadPanel({ onSendPrompt }: LogUploadPanelProps) {
     <section className="threat-panel" aria-labelledby="threat-upload-title">
       <header className="threat-panel__header">
         <div>
-          <p>Log import</p>
-          <h2 id="threat-upload-title">Upload logs</h2>
+          <p>Bring your own evidence</p>
+          <h2 id="threat-upload-title">Import logs</h2>
         </div>
         {summary ? <span>{summary.rows.length} rows</span> : null}
       </header>
       <div className="threat-upload">
-        <label className="threat-upload__label" htmlFor="threat-upload-input">
-          {busy ? "Reading file…" : summary ? "Replace file" : "Choose a JSON log file"}
+        <label
+          className="threat-upload__label threat-upload__label--primary"
+          htmlFor="threat-upload-input"
+        >
+          {busy ? "Reading file…" : summary ? "Import another file" : "Import logs"}
         </label>
         <input
           ref={inputRef}
           id="threat-upload-input"
           className="threat-upload__input"
           type="file"
-          accept=".json,application/json"
+          accept=".json,.ndjson,.jsonl,.csv,application/json,text/csv"
           disabled={busy}
           onChange={(event) => {
             const file = event.target.files?.item(0);
@@ -177,8 +270,8 @@ export function LogUploadPanel({ onSendPrompt }: LogUploadPanelProps) {
           }}
         />
         <p className="threat-upload__note">
-          Local only: rows are validated in your browser and never sent to the server or used as
-          evidence.
+          Accepts JSON, NDJSON/JSONL, or CSV. Local only: rows are validated in your browser and
+          never sent to the server or used as evidence.
         </p>
         {error ? <p className="threat-upload__error">{error}</p> : null}
         {summary ? (

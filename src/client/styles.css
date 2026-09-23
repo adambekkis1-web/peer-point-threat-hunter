@@ -714,6 +714,20 @@
   background: #fbe7d8;
 }
 
+.threat-upload__label--primary {
+  padding: 0.55rem 1rem;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--pp-orange, #f48120), #e15d0c);
+  color: #fff;
+  font-size: 0.62rem;
+  box-shadow: 0 5px 14px rgba(225, 93, 12, 0.23);
+}
+
+.threat-upload__label--primary:hover {
+  background: linear-gradient(135deg, var(--pp-orange, #f48120), #e15d0c);
+  box-shadow: 0 7px 18px rgba(225, 93, 12, 0.3);
+}
+
 .threat-upload__input:focus-visible + .threat-upload__label {
   outline: 2px solid #b9470a;
   outline-offset: 2px;
